@@ -156,56 +156,17 @@ else:
 
 st.markdown("---")
 
-# --- SECTION 2: PERFORMANCE AT-A-GLANCE (WITH COLORS) ---
+# --- SECTION 2: PERFORMANCE AT-A-GLANCE ---
 st.header("Performance At-a-Glance")
-
-# Define the CSS for the colored boxes
-st.markdown("""
-<style>
-.kpi-box {
-    background-color: #f8f9fa;
-    border: 1px solid #000;
-    border-radius: 5px;
-    padding: 20px;
-    text-align: center;
-    color: #000;
-    margin-bottom: 10px;
-    height: 120px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-}
-.kpi-box h3 {
-    margin: 0 0 5px 0;
-    font-size: 1.2em;
-    font-weight: bold;
-}
-.kpi-box p {
-    margin: 0;
-    font-size: 1.8em;
-    font-weight: bold;
-}
-.yellow-box { background-color: #FFF3C4; }
-.purple-box { background-color: #E6E0F8; }
-.green-box  { background-color: #D5F5E3; }
-.blue-box   { background-color: #D6EAF8; }
-</style>
-""", unsafe_allow_html=True)
-
-# Display the grid using custom HTML
+st.markdown("""<style>...</style>""", unsafe_allow_html=True) # CSS is unchanged, hiding for brevity
+st.markdown("""<style> .kpi-box { background-color: #f8f9fa; border: 1px solid #000; border-radius: 5px; padding: 20px; text-align: center; color: #000; margin-bottom: 10px; height: 120px; display: flex; flex-direction: column; justify-content: center; } .kpi-box h3 { margin: 0 0 5px 0; font-size: 1.2em; font-weight: bold; } .kpi-box p { margin: 0; font-size: 1.8em; font-weight: bold; } .yellow-box { background-color: #FFF3C4; } .purple-box { background-color: #E6E0F8; } .green-box  { background-color: #D5F5E3; } .blue-box   { background-color: #D6EAF8; } </style>""", unsafe_allow_html=True)
 periods = { "WTD": kpis_wtd, "MTD": kpis_mtd, "YTD": kpis_ytd }
-
 for period_name, kpi_data in periods.items():
     col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.markdown(f'<div class="kpi-box yellow-box"><h3>{period_name}</h3></div>', unsafe_allow_html=True)
-    with col2:
-        st.markdown(f'<div class="kpi-box purple-box"><h3>COST</h3><p>${kpi_data["Cost"]:,.0f}</p></div>', unsafe_allow_html=True)
-    with col3:
-        st.markdown(f'<div class="kpi-box green-box"><h3>BOOKING</h3><p>{kpi_data["Booking"]:,}</p></div>', unsafe_allow_html=True)
-    with col4:
-        st.markdown(f'<div class="kpi-box blue-box"><h3>CPB</h3><p>${kpi_data["CPB"]:,.0f}</p></div>', unsafe_allow_html=True)
-
+    with col1: st.markdown(f'<div class="kpi-box yellow-box"><h3>{period_name}</h3></div>', unsafe_allow_html=True)
+    with col2: st.markdown(f'<div class="kpi-box purple-box"><h3>COST</h3><p>${kpi_data["Cost"]:,.0f}</p></div>', unsafe_allow_html=True)
+    with col3: st.markdown(f'<div class="kpi-box green-box"><h3>BOOKING</h3><p>{kpi_data["Booking"]:,}</p></div>', unsafe_allow_html=True)
+    with col4: st.markdown(f'<div class="kpi-box blue-box"><h3>CPB</h3><p>${kpi_data["CPB"]:,.0f}</p></div>', unsafe_allow_html=True)
 
 st.markdown("---")
 
@@ -227,17 +188,25 @@ if not df_main.empty:
     if summary_compare is not None:
         summary_compare = summary_compare[summary_compare.index.isin(regions_to_display)]
 
-    def get_change_color(value):
-        if value > 0: return "color: #00A36C;" 
-        elif value < 0: return "color: #D32F2F;" 
-        return "color: grey;" 
+    # --- THIS IS THE UPDATED FUNCTION ---
+    def get_change_color(value, metric_name):
+        # Define the rules based on your request
+        increase_is_good = ['Impressions', 'Clicks', 'Cost', 'GA-Booking', 'CTR', 'CVR']
+        decrease_is_good = ['CPC', 'CPB']
+
+        if value == 0: return "color: grey;"
+
+        if metric_name in increase_is_good:
+            return "color: #00A36C;" if value > 0 else "color: #D32F2F;"
+        elif metric_name in decrease_is_good:
+            return "color: #00A36C;" if value < 0 else "color: #D32F2F;"
+        
+        return "color: grey;" # Default for any other metrics
 
     def generate_html_table(main_data, compare_data=None):
         metrics = ['Impressions', 'Clicks', 'Cost', 'GA-Booking', 'CTR', 'CPC', 'CPB', 'CVR']
-        html = """
-        <style> .styled-table { border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; } .styled-table th, .styled-table td { border: 1px solid #ddd; padding: 8px; } .styled-table th { padding-top: 12px; padding-bottom: 12px; text-align: center; background-color: #008080; color: white; font-weight: bold; } .styled-table td { text-align: center; } .state-name { text-align: left; font-weight: bold; } .metric-values { font-size: 1em; } .percent-change { font-size: 0.9em; font-weight: bold; } </style>
-        <table class="styled-table"> <tr><th>State</th>
-        """
+        html = """<style>...</style><table class="styled-table">...</table>""" # (CSS is unchanged, hiding for brevity)
+        html = """<style> .styled-table { border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; } .styled-table th, .styled-table td { border: 1px solid #ddd; padding: 8px; } .styled-table th { padding-top: 12px; padding-bottom: 12px; text-align: center; background-color: #008080; color: white; font-weight: bold; } .styled-table td { text-align: center; } .state-name { text-align: left; font-weight: bold; } .metric-values { font-size: 1em; } .percent-change { font-size: 0.9em; font-weight: bold; } </style><table class="styled-table"> <tr><th>State</th>"""
         for metric in metrics: html += f"<th>{metric.replace('_', ' ')}</th>"
         html += "</tr>"
         for region, main_row in main_data.iterrows():
@@ -255,7 +224,10 @@ if not df_main.empty:
                     else: compare_val_str = f"{compare_val:,.0f}"
                     if compare_val > 0: percent_change = (main_val - compare_val) / compare_val
                     else: percent_change = 0 if main_val == 0 else 1.0
-                    color = get_change_color(percent_change)
+                    
+                    # Pass the metric name to the color function
+                    color = get_change_color(percent_change, metric)
+                    
                     html += f"<td><div class='metric-values'>{main_val_str} | {compare_val_str}</div><div class='percent-change' style='{color}'>{percent_change:.0%}</div></td>"
                 else:
                     html += f"<td><div class='metric-values'>{main_val_str}</div></td>"
