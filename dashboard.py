@@ -21,14 +21,12 @@ st.title("🐾 BFP Marketing Performance Dashboard")
 # -----------------------------------------------------------------------------
 @st.cache_data(ttl=3600) # Refresh data every hour
 def get_combined_data():
-    # Load historical data from the Excel file
     try:
         df_excel = pd.read_excel("raw_data.xlsx")
     except FileNotFoundError:
         st.error("Error: The historical data file 'raw_data.xlsx' was not found.")
         df_excel = pd.DataFrame()
 
-    # Load current data from Google Sheets using Streamlit Secrets
     try:
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         worksheet = gc.open("Vets Raw").sheet1
@@ -38,7 +36,6 @@ def get_combined_data():
         st.error(f"Error loading Google Sheet: {e}")
         df_gsheet = pd.DataFrame()
 
-    # Combine the two dataframes
     if not df_excel.empty and not df_gsheet.empty:
         df_combined = pd.concat([df_excel, df_gsheet], ignore_index=True)
     elif not df_excel.empty:
@@ -46,17 +43,14 @@ def get_combined_data():
     else:
         df_combined = df_gsheet
 
-    # Stop the app if no data is loaded
     if df_combined.empty:
         st.error("No data loaded. Please check your data sources.")
         st.stop()
         
-    # Clean up numeric columns to prevent data type errors
     numeric_cols = ['Impressions', 'Clicks', 'Cost', 'Conversions', 'GA-Booking', 'Year']
     for col in numeric_cols:
         df_combined[col] = pd.to_numeric(df_combined[col], errors='coerce').fillna(0)
     
-    # Clean up Date column to prevent parsing errors
     df_combined['Date'] = pd.to_datetime(df_combined['Date'], errors='coerce')
     df_combined.dropna(subset=['Date'], inplace=True)
     
@@ -106,14 +100,12 @@ def calculate_summary_kpis(grouped_df):
     summary['CVR'] = summary['Conversions'] / summary['Clicks'] if summary['Clicks'].sum() > 0 else 0
     return summary
 
-# Build the base filter mask from sidebar selections
 base_mask = df['Date'].notna() 
 if channel != "All":
     base_mask = base_mask & (df["Channel"] == channel)
 if campaign != "All":
     base_mask = base_mask & (df["Campaign"] == campaign)
 
-# --- Process data for Custom Period Analysis ---
 df_main = pd.DataFrame() 
 if len(date_range) == 2:
     main_start, main_end = date_range
@@ -130,7 +122,6 @@ if len(date_range) == 2:
         df_compare = df[compare_mask]
         kpis_compare_total = calculate_kpis(df_compare)
 
-# --- Process data for WTD/MTD/YTD Analysis ---
 today = pd.Timestamp.now().date() 
 start_of_year = date(today.year, 1, 1)
 start_of_month = date(today.year, today.month, 1)
@@ -165,25 +156,58 @@ else:
 
 st.markdown("---")
 
-# --- SECTION 2: PERFORMANCE AT-A-GLANCE ---
+# --- SECTION 2: PERFORMANCE AT-A-GLANCE (WITH COLORS) ---
 st.header("Performance At-a-Glance")
-glance_col1, glance_col2, glance_col3, glance_col4 = st.columns(4)
-with glance_col1:
-    st.markdown("### WTD"); st.markdown("*(Week to Date)*"); st.markdown("---")
-    st.markdown("### MTD"); st.markdown("*(Month to Date)*"); st.markdown("---")
-    st.markdown("### YTD"); st.markdown("*(Year to Date)*"); st.markdown("---")
-with glance_col2:
-    st.metric("COST", f"${kpis_wtd['Cost']:,.2f}"); st.markdown("---")
-    st.metric("COST", f"${kpis_mtd['Cost']:,.2f}"); st.markdown("---")
-    st.metric("COST", f"${kpis_ytd['Cost']:,.2f}"); st.markdown("---")
-with glance_col3:
-    st.metric("BOOKING", f"{kpis_wtd['Booking']:,}"); st.markdown("---")
-    st.metric("BOOKING", f"{kpis_mtd['Booking']:,}"); st.markdown("---")
-    st.metric("BOOKING", f"{kpis_ytd['Booking']:,}"); st.markdown("---")
-with glance_col4:
-    st.metric("CPB", f"${kpis_wtd['CPB']:,.2f}"); st.markdown("---")
-    st.metric("CPB", f"${kpis_mtd['CPB']:,.2f}"); st.markdown("---")
-    st.metric("CPB", f"${kpis_ytd['CPB']:,.2f}"); st.markdown("---")
+
+# --- NEW: Define the CSS for the colored boxes ---
+st.markdown("""
+<style>
+.kpi-box {
+    border: 1px solid #000;
+    border-radius: 5px;
+    padding: 20px;
+    text-align: center;
+    color: #000;
+    margin-bottom: 10px;
+    height: 120px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+.kpi-box h3 {
+    margin: 0;
+    font-size: 1.5em;
+    font-weight: bold;
+}
+.kpi-box p {
+    margin: 0;
+    font-size: 2em;
+    font-weight: bold;
+}
+.yellow-box { background-color: #FFF3C4; }
+.purple-box { background-color: #E6E0F8; }
+.green-box  { background-color: #D5F5E3; }
+.blue-box   { background-color: #D6EAF8; }
+</style>
+""", unsafe_allow_html=True)
+
+# --- NEW: Display the grid using custom HTML ---
+periods = {
+    "WTD": kpis_wtd,
+    "MTD": kpis_mtd,
+    "YTD": kpis_ytd
+}
+
+for period_name, kpi_data in periods.items():
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.markdown(f'<div class="kpi-box yellow-box"><h3>{period_name}</h3></div>', unsafe_allow_html=True)
+    with col2:
+        st.markdown(f'<div class="kpi-box purple-box"><p>${kpi_data["Cost"]:,.0f}</p></div>', unsafe_allow_html=True)
+    with col3:
+        st.markdown(f'<div class="kpi-box green-box"><p>{kpi_data["Booking"]:,}</p></div>', unsafe_allow_html=True)
+    with col4:
+        st.markdown(f'<div class="kpi-box blue-box"><p>${kpi_data["CPB"]:,.0f}</p></div>', unsafe_allow_html=True)
 
 st.markdown("---")
 
