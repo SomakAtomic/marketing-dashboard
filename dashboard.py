@@ -159,10 +159,11 @@ st.markdown("---")
 # --- SECTION 2: PERFORMANCE AT-A-GLANCE (WITH COLORS) ---
 st.header("Performance At-a-Glance")
 
-# --- NEW: Define the CSS for the colored boxes ---
+# Define the CSS for the colored boxes
 st.markdown("""
 <style>
 .kpi-box {
+    background-color: #f8f9fa;
     border: 1px solid #000;
     border-radius: 5px;
     padding: 20px;
@@ -175,13 +176,13 @@ st.markdown("""
     justify-content: center;
 }
 .kpi-box h3 {
-    margin: 0;
-    font-size: 1.5em;
+    margin: 0 0 5px 0;
+    font-size: 1.2em;
     font-weight: bold;
 }
 .kpi-box p {
     margin: 0;
-    font-size: 2em;
+    font-size: 1.8em;
     font-weight: bold;
 }
 .yellow-box { background-color: #FFF3C4; }
@@ -191,23 +192,20 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- NEW: Display the grid using custom HTML ---
-periods = {
-    "WTD": kpis_wtd,
-    "MTD": kpis_mtd,
-    "YTD": kpis_ytd
-}
+# Display the grid using custom HTML
+periods = { "WTD": kpis_wtd, "MTD": kpis_mtd, "YTD": kpis_ytd }
 
 for period_name, kpi_data in periods.items():
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.markdown(f'<div class="kpi-box yellow-box"><h3>{period_name}</h3></div>', unsafe_allow_html=True)
     with col2:
-        st.markdown(f'<div class="kpi-box purple-box"><p>${kpi_data["Cost"]:,.0f}</p></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="kpi-box purple-box"><h3>COST</h3><p>${kpi_data["Cost"]:,.0f}</p></div>', unsafe_allow_html=True)
     with col3:
-        st.markdown(f'<div class="kpi-box green-box"><p>{kpi_data["Booking"]:,}</p></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="kpi-box green-box"><h3>BOOKING</h3><p>{kpi_data["Booking"]:,}</p></div>', unsafe_allow_html=True)
     with col4:
-        st.markdown(f'<div class="kpi-box blue-box"><p>${kpi_data["CPB"]:,.0f}</p></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="kpi-box blue-box"><h3>CPB</h3><p>${kpi_data["CPB"]:,.0f}</p></div>', unsafe_allow_html=True)
+
 
 st.markdown("---")
 
