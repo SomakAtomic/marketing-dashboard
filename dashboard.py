@@ -19,16 +19,17 @@ st.title("🐾 BFP Marketing Performance Dashboard")
 # -----------------------------------------------------------------------------
 # 3. DATA LOADING AND CLEANING
 # -----------------------------------------------------------------------------
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=3600) # Refresh data every hour
 def get_combined_data():
+    # Load historical data from the Excel file
     try:
         df_excel = pd.read_excel("raw_data.xlsx")
     except FileNotFoundError:
         st.error("Error: The historical data file 'raw_data.xlsx' was not found.")
         df_excel = pd.DataFrame()
 
+    # Load current data from Google Sheets using Streamlit Secrets
     try:
-        # This line uses the securely stored secrets for deployment
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         worksheet = gc.open("Vets Raw").sheet1
         data = worksheet.get_all_records()
@@ -37,6 +38,7 @@ def get_combined_data():
         st.error(f"Error loading Google Sheet: {e}")
         df_gsheet = pd.DataFrame()
 
+    # Combine the two dataframes
     if not df_excel.empty and not df_gsheet.empty:
         df_combined = pd.concat([df_excel, df_gsheet], ignore_index=True)
     elif not df_excel.empty:
@@ -44,19 +46,19 @@ def get_combined_data():
     else:
         df_combined = df_gsheet
 
+    # Stop the app if no data is loaded
     if df_combined.empty:
         st.error("No data loaded. Please check your data sources.")
         st.stop()
         
+    # Clean up numeric columns to prevent data type errors
     numeric_cols = ['Impressions', 'Clicks', 'Cost', 'Conversions', 'GA-Booking', 'Year']
     for col in numeric_cols:
         df_combined[col] = pd.to_numeric(df_combined[col], errors='coerce').fillna(0)
     
-   # Convert 'Date' column to datetime, turning any errors into NaT (Not a Time)
-df_combined['Date'] = pd.to_datetime(df_combined['Date'], errors='coerce')
-
-# Drop any rows where the date conversion failed, ensuring data integrity
-df_combined.dropna(subset=['Date'], inplace=True)
+    # Clean up Date column to prevent parsing errors
+    df_combined['Date'] = pd.to_datetime(df_combined['Date'], errors='coerce')
+    df_combined.dropna(subset=['Date'], inplace=True)
     
     return df_combined
 
@@ -121,7 +123,7 @@ if len(date_range) == 2:
     kpis_main_total = calculate_kpis(df_main) 
 
     kpis_compare_total = {"Cost": 0, "Booking": 0, "CPB": 0} 
-    df_compare = pd.DataFrame() # Initialize df_compare
+    df_compare = pd.DataFrame() 
     if compare_enabled and compare_date_range and len(compare_date_range) == 2:
         compare_start, compare_end = compare_date_range
         compare_mask = base_mask & (df["Date"] >= pd.to_datetime(compare_start)) & (df["Date"] <= pd.to_datetime(compare_end))
@@ -210,7 +212,10 @@ if not df_main.empty:
 
     def generate_html_table(main_data, compare_data=None):
         metrics = ['Impressions', 'Clicks', 'Cost', 'GA-Booking', 'CTR', 'CPC', 'CPB', 'CVR']
-        html = """<style> .styled-table { border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; } .styled-table th, .styled-table td { border: 1px solid #ddd; padding: 8px; } .styled-table th { padding-top: 12px; padding-bottom: 12px; text-align: center; background-color: #008080; color: white; font-weight: bold; } .styled-table td { text-align: center; } .state-name { text-align: left; font-weight: bold; } .metric-values { font-size: 1em; } .percent-change { font-size: 0.9em; font-weight: bold; } </style><table class="styled-table"> <tr><th>State</th>"""
+        html = """
+        <style> .styled-table { border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; } .styled-table th, .styled-table td { border: 1px solid #ddd; padding: 8px; } .styled-table th { padding-top: 12px; padding-bottom: 12px; text-align: center; background-color: #008080; color: white; font-weight: bold; } .styled-table td { text-align: center; } .state-name { text-align: left; font-weight: bold; } .metric-values { font-size: 1em; } .percent-change { font-size: 0.9em; font-weight: bold; } </style>
+        <table class="styled-table"> <tr><th>State</th>
+        """
         for metric in metrics: html += f"<th>{metric.replace('_', ' ')}</th>"
         html += "</tr>"
         for region, main_row in main_data.iterrows():
