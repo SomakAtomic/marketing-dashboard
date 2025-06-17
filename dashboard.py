@@ -28,7 +28,8 @@ def get_combined_data():
         df_excel = pd.DataFrame()
 
     try:
-        gc = gspread.service_account(filename="google_credentials.json")
+        # This line uses the securely stored secrets for deployment
+        gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         worksheet = gc.open("Vets Raw").sheet1
         data = worksheet.get_all_records()
         df_gsheet = pd.DataFrame(data)
@@ -107,15 +108,16 @@ if campaign != "All":
     base_mask = base_mask & (df["Campaign"] == campaign)
 
 # --- Process data for Custom Period Analysis ---
-df_main = pd.DataFrame() # Initialize empty dataframe
+df_main = pd.DataFrame() 
 if len(date_range) == 2:
     main_start, main_end = date_range
     main_mask = base_mask & (df["Date"] >= pd.to_datetime(main_start)) & (df["Date"] <= pd.to_datetime(main_end))
     df_main = df[main_mask]
     
-    kpis_main_total = calculate_kpis(df_main) # Get total KPIs for the main period
+    kpis_main_total = calculate_kpis(df_main) 
 
-    kpis_compare_total = {"Cost": 0, "Booking": 0, "CPB": 0} # Default empty values
+    kpis_compare_total = {"Cost": 0, "Booking": 0, "CPB": 0} 
+    df_compare = pd.DataFrame() # Initialize df_compare
     if compare_enabled and compare_date_range and len(compare_date_range) == 2:
         compare_start, compare_end = compare_date_range
         compare_mask = base_mask & (df["Date"] >= pd.to_datetime(compare_start)) & (df["Date"] <= pd.to_datetime(compare_end))
@@ -184,7 +186,7 @@ st.header("State Performance")
 if not df_main.empty:
     summary_main = df_main.groupby("Region")[['Impressions', 'Clicks', 'Cost', 'Conversions', 'GA-Booking']].apply(calculate_summary_kpis)
     summary_compare = None
-    if compare_enabled and 'df_compare' in locals() and not df_compare.empty:
+    if compare_enabled and not df_compare.empty:
         summary_compare = df_compare.groupby("Region")[['Impressions', 'Clicks', 'Cost', 'Conversions', 'GA-Booking']].apply(calculate_summary_kpis)
 
     regions_to_display = [
@@ -204,11 +206,7 @@ if not df_main.empty:
 
     def generate_html_table(main_data, compare_data=None):
         metrics = ['Impressions', 'Clicks', 'Cost', 'GA-Booking', 'CTR', 'CPC', 'CPB', 'CVR']
-        html = """<style>...</style><table class="styled-table">...</table>""" # (HTML code is unchanged but kept here for completeness)
-        html = """
-        <style> .styled-table { border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; } .styled-table th, .styled-table td { border: 1px solid #ddd; padding: 8px; } .styled-table th { padding-top: 12px; padding-bottom: 12px; text-align: center; background-color: #008080; color: white; font-weight: bold; } .styled-table td { text-align: center; } .state-name { text-align: left; font-weight: bold; } .metric-values { font-size: 1em; } .percent-change { font-size: 0.9em; font-weight: bold; } </style>
-        <table class="styled-table"> <tr><th>State</th>
-        """
+        html = """<style> .styled-table { border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; } .styled-table th, .styled-table td { border: 1px solid #ddd; padding: 8px; } .styled-table th { padding-top: 12px; padding-bottom: 12px; text-align: center; background-color: #008080; color: white; font-weight: bold; } .styled-table td { text-align: center; } .state-name { text-align: left; font-weight: bold; } .metric-values { font-size: 1em; } .percent-change { font-size: 0.9em; font-weight: bold; } </style><table class="styled-table"> <tr><th>State</th>"""
         for metric in metrics: html += f"<th>{metric.replace('_', ' ')}</th>"
         html += "</tr>"
         for region, main_row in main_data.iterrows():
