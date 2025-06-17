@@ -19,7 +19,7 @@ st.title("🐾 BFP Marketing Performance Dashboard")
 # -----------------------------------------------------------------------------
 # 3. DATA LOADING AND CLEANING
 # -----------------------------------------------------------------------------
-@st.cache_data
+@st.cache_data(ttl=60)
 def get_combined_data():
     try:
         df_excel = pd.read_excel("raw_data.xlsx")
@@ -52,7 +52,11 @@ def get_combined_data():
     for col in numeric_cols:
         df_combined[col] = pd.to_numeric(df_combined[col], errors='coerce').fillna(0)
     
-    df_combined['Date'] = pd.to_datetime(df_combined['Date'])
+   # Convert 'Date' column to datetime, turning any errors into NaT (Not a Time)
+df_combined['Date'] = pd.to_datetime(df_combined['Date'], errors='coerce')
+
+# Drop any rows where the date conversion failed, ensuring data integrity
+df_combined.dropna(subset=['Date'], inplace=True)
     
     return df_combined
 
