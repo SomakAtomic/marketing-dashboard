@@ -1,0 +1,243 @@
+# -----------------------------------------------------------------------------
+# 1. IMPORT LIBRARIES
+# -----------------------------------------------------------------------------
+import streamlit as st
+import pandas as pd
+from datetime import datetime, date
+import gspread 
+
+# -----------------------------------------------------------------------------
+# 2. PAGE SETUP
+# -----------------------------------------------------------------------------
+st.set_page_config(
+    page_title="BFP Marketing Dashboard",
+    page_icon="🐾",
+    layout="wide"
+)
+st.title("🐾 BFP Marketing Performance Dashboard")
+
+# -----------------------------------------------------------------------------
+# 3. DATA LOADING AND CLEANING
+# -----------------------------------------------------------------------------
+@st.cache_data
+def get_combined_data():
+    try:
+        df_excel = pd.read_excel("raw_data.xlsx")
+    except FileNotFoundError:
+        st.error("Error: The historical data file 'raw_data.xlsx' was not found.")
+        df_excel = pd.DataFrame()
+
+    try:
+        gc = gspread.service_account(filename="google_credentials.json")
+        worksheet = gc.open("Vets Raw").sheet1
+        data = worksheet.get_all_records()
+        df_gsheet = pd.DataFrame(data)
+    except Exception as e:
+        st.error(f"Error loading Google Sheet: {e}")
+        df_gsheet = pd.DataFrame()
+
+    if not df_excel.empty and not df_gsheet.empty:
+        df_combined = pd.concat([df_excel, df_gsheet], ignore_index=True)
+    elif not df_excel.empty:
+        df_combined = df_excel
+    else:
+        df_combined = df_gsheet
+
+    if df_combined.empty:
+        st.error("No data loaded. Please check your data sources.")
+        st.stop()
+        
+    numeric_cols = ['Impressions', 'Clicks', 'Cost', 'Conversions', 'GA-Booking', 'Year']
+    for col in numeric_cols:
+        df_combined[col] = pd.to_numeric(df_combined[col], errors='coerce').fillna(0)
+    
+    df_combined['Date'] = pd.to_datetime(df_combined['Date'])
+    
+    return df_combined
+
+df = get_combined_data()
+
+# -----------------------------------------------------------------------------
+# 4. SIDEBAR AND FILTERS
+# -----------------------------------------------------------------------------
+st.sidebar.header("Dashboard Filters")
+
+channel_options = ["All"] + df["Channel"].unique().tolist()
+channel = st.sidebar.selectbox("Select Channel", options=channel_options)
+
+if channel == "All":
+    campaign_options = ["All"] + df["Campaign"].unique().tolist()
+else:
+    campaign_options = ["All"] + df[df["Channel"] == channel]["Campaign"].unique().tolist()
+    
+campaign = st.sidebar.selectbox("Select Campaign", options=campaign_options)
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("Main Period")
+date_range = st.sidebar.date_input("Select Date Range", value=(df["Date"].min(), df["Date"].max()), min_value=df["Date"].min(), max_value=df["Date"].max())
+
+compare_enabled = st.sidebar.checkbox("Compare Date", value=True)
+compare_date_range = None
+if compare_enabled:
+    st.sidebar.subheader("Comparison Period")
+    compare_date_range = st.sidebar.date_input("Select Comparison Date Range", value=(df["Date"].min(), df["Date"].max()), min_value=df["Date"].min(), max_value=df["Date"].max())
+
+# -----------------------------------------------------------------------------
+# 5. DATA PROCESSING & KPI CALCULATION
+# -----------------------------------------------------------------------------
+def calculate_kpis(dataframe):
+    cost = dataframe["Cost"].sum()
+    bookings = dataframe["GA-Booking"].sum()
+    cpb = cost / bookings if bookings > 0 else 0
+    return {"Cost": cost, "Booking": bookings, "CPB": cpb}
+
+def calculate_summary_kpis(grouped_df):
+    summary = grouped_df.sum()
+    summary['CTR'] = summary['Clicks'] / summary['Impressions'] if summary['Impressions'].sum() > 0 else 0
+    summary['CPC'] = summary['Cost'] / summary['Clicks'] if summary['Clicks'].sum() > 0 else 0
+    summary['CPB'] = summary['Cost'] / summary['GA-Booking'] if summary['GA-Booking'].sum() > 0 else 0
+    summary['CVR'] = summary['Conversions'] / summary['Clicks'] if summary['Clicks'].sum() > 0 else 0
+    return summary
+
+# Build the base filter mask from sidebar selections
+base_mask = df['Date'].notna() 
+if channel != "All":
+    base_mask = base_mask & (df["Channel"] == channel)
+if campaign != "All":
+    base_mask = base_mask & (df["Campaign"] == campaign)
+
+# --- Process data for Custom Period Analysis ---
+df_main = pd.DataFrame() # Initialize empty dataframe
+if len(date_range) == 2:
+    main_start, main_end = date_range
+    main_mask = base_mask & (df["Date"] >= pd.to_datetime(main_start)) & (df["Date"] <= pd.to_datetime(main_end))
+    df_main = df[main_mask]
+    
+    kpis_main_total = calculate_kpis(df_main) # Get total KPIs for the main period
+
+    kpis_compare_total = {"Cost": 0, "Booking": 0, "CPB": 0} # Default empty values
+    if compare_enabled and compare_date_range and len(compare_date_range) == 2:
+        compare_start, compare_end = compare_date_range
+        compare_mask = base_mask & (df["Date"] >= pd.to_datetime(compare_start)) & (df["Date"] <= pd.to_datetime(compare_end))
+        df_compare = df[compare_mask]
+        kpis_compare_total = calculate_kpis(df_compare)
+
+# --- Process data for WTD/MTD/YTD Analysis ---
+today = pd.Timestamp.now().date() 
+start_of_year = date(today.year, 1, 1)
+start_of_month = date(today.year, today.month, 1)
+start_of_week = today - pd.to_timedelta(today.weekday(), unit='d')
+
+df_ytd = df[df['Date'].dt.date >= start_of_year]
+df_mtd = df[df['Date'].dt.date >= start_of_month]
+df_wtd = df[df['Date'].dt.date >= start_of_week]
+
+kpis_ytd = calculate_kpis(df_ytd)
+kpis_mtd = calculate_kpis(df_mtd)
+kpis_wtd = calculate_kpis(df_wtd)
+
+# -----------------------------------------------------------------------------
+# 6. DISPLAY DASHBOARD SECTIONS IN ORDER
+# -----------------------------------------------------------------------------
+
+# --- SECTION 1: CUSTOM PERIOD ANALYSIS ---
+st.header("Custom Period Analysis")
+if not df_main.empty:
+    st.subheader("Period vs. Comparison")
+    comp_col1, comp_col2, comp_col3 = st.columns(3)
+    delta_cost = kpis_main_total["Cost"] - kpis_compare_total["Cost"]
+    delta_booking = kpis_main_total["Booking"] - kpis_compare_total["Booking"]
+    delta_cpb = kpis_main_total["CPB"] - kpis_compare_total["CPB"]
+    
+    comp_col1.metric("COST", f"${kpis_main_total['Cost']:,.2f}", f"${delta_cost:,.2f}" if compare_enabled else None)
+    comp_col2.metric("BOOKING", f"{kpis_main_total['Booking']:,}", f"{delta_booking:,}" if compare_enabled else None)
+    comp_col3.metric("CPB", f"${kpis_main_total['CPB']:,.2f}", f"${delta_cpb:,.2f}" if compare_enabled else None, delta_color="inverse")
+else:
+    st.warning("No data found for the selected 'Main Period' and filters.")
+
+st.markdown("---")
+
+# --- SECTION 2: PERFORMANCE AT-A-GLANCE ---
+st.header("Performance At-a-Glance")
+glance_col1, glance_col2, glance_col3, glance_col4 = st.columns(4)
+with glance_col1:
+    st.markdown("### WTD"); st.markdown("*(Week to Date)*"); st.markdown("---")
+    st.markdown("### MTD"); st.markdown("*(Month to Date)*"); st.markdown("---")
+    st.markdown("### YTD"); st.markdown("*(Year to Date)*"); st.markdown("---")
+with glance_col2:
+    st.metric("COST", f"${kpis_wtd['Cost']:,.2f}"); st.markdown("---")
+    st.metric("COST", f"${kpis_mtd['Cost']:,.2f}"); st.markdown("---")
+    st.metric("COST", f"${kpis_ytd['Cost']:,.2f}"); st.markdown("---")
+with glance_col3:
+    st.metric("BOOKING", f"{kpis_wtd['Booking']:,}"); st.markdown("---")
+    st.metric("BOOKING", f"{kpis_mtd['Booking']:,}"); st.markdown("---")
+    st.metric("BOOKING", f"{kpis_ytd['Booking']:,}"); st.markdown("---")
+with glance_col4:
+    st.metric("CPB", f"${kpis_wtd['CPB']:,.2f}"); st.markdown("---")
+    st.metric("CPB", f"${kpis_mtd['CPB']:,.2f}"); st.markdown("---")
+    st.metric("CPB", f"${kpis_ytd['CPB']:,.2f}"); st.markdown("---")
+
+st.markdown("---")
+
+# --- SECTION 3: STATE PERFORMANCE ---
+st.header("State Performance")
+if not df_main.empty:
+    summary_main = df_main.groupby("Region")[['Impressions', 'Clicks', 'Cost', 'Conversions', 'GA-Booking']].apply(calculate_summary_kpis)
+    summary_compare = None
+    if compare_enabled and 'df_compare' in locals() and not df_compare.empty:
+        summary_compare = df_compare.groupby("Region")[['Impressions', 'Clicks', 'Cost', 'Conversions', 'GA-Booking']].apply(calculate_summary_kpis)
+
+    regions_to_display = [
+        'New South Wales', 'Victoria', 'Western Australia', 'Queensland', 'Tasmania',
+        'South Australia', 'Australian Capital Territory', 'Auckland', 'Wellington',
+        "Hawke's Bay", 'Tasman', 'Waikato', 'Manawatu-Whanganui', 'Otago',
+        'Nelson', 'Bay of Plenty', 'Canterbury'
+    ]
+    summary_main = summary_main[summary_main.index.isin(regions_to_display)]
+    if summary_compare is not None:
+        summary_compare = summary_compare[summary_compare.index.isin(regions_to_display)]
+
+    def get_change_color(value):
+        if value > 0: return "color: #00A36C;" 
+        elif value < 0: return "color: #D32F2F;" 
+        return "color: grey;" 
+
+    def generate_html_table(main_data, compare_data=None):
+        metrics = ['Impressions', 'Clicks', 'Cost', 'GA-Booking', 'CTR', 'CPC', 'CPB', 'CVR']
+        html = """<style>...</style><table class="styled-table">...</table>""" # (HTML code is unchanged but kept here for completeness)
+        html = """
+        <style> .styled-table { border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; } .styled-table th, .styled-table td { border: 1px solid #ddd; padding: 8px; } .styled-table th { padding-top: 12px; padding-bottom: 12px; text-align: center; background-color: #008080; color: white; font-weight: bold; } .styled-table td { text-align: center; } .state-name { text-align: left; font-weight: bold; } .metric-values { font-size: 1em; } .percent-change { font-size: 0.9em; font-weight: bold; } </style>
+        <table class="styled-table"> <tr><th>State</th>
+        """
+        for metric in metrics: html += f"<th>{metric.replace('_', ' ')}</th>"
+        html += "</tr>"
+        for region, main_row in main_data.iterrows():
+            html += f"<tr><td class='state-name'>{region}</td>"
+            for metric in metrics:
+                main_val = main_row.get(metric, 0)
+                if metric in ['CTR', 'CVR']: main_val_str = f"{main_val:.2%}"
+                elif metric in ['CPC', 'CPB', 'Cost']: main_val_str = f"${main_val:,.2f}"
+                else: main_val_str = f"{main_val:,.0f}"
+                if compare_data is not None and region in compare_data.index:
+                    compare_row = compare_data.loc[region]
+                    compare_val = compare_row.get(metric, 0)
+                    if metric in ['CTR', 'CVR']: compare_val_str = f"{compare_val:.2%}"
+                    elif metric in ['CPC', 'CPB', 'Cost']: compare_val_str = f"${compare_val:,.2f}"
+                    else: compare_val_str = f"{compare_val:,.0f}"
+                    if compare_val > 0: percent_change = (main_val - compare_val) / compare_val
+                    else: percent_change = 0 if main_val == 0 else 1.0
+                    color = get_change_color(percent_change)
+                    html += f"<td><div class='metric-values'>{main_val_str} | {compare_val_str}</div><div class='percent-change' style='{color}'>{percent_change:.0%}</div></td>"
+                else:
+                    html += f"<td><div class='metric-values'>{main_val_str}</div></td>"
+            html += "</tr>"
+        html += "</table>"
+        return html
+
+    if compare_enabled and summary_compare is not None:
+        html_table = generate_html_table(summary_main, summary_compare)
+    else:
+        html_table = generate_html_table(summary_main)
+    st.markdown(html_table, unsafe_allow_html=True)
+else:
+     st.warning("No data found for the selected 'Main Period' and filters to display State Performance.")
