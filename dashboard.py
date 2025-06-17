@@ -61,18 +61,35 @@ df = get_combined_data()
 # -----------------------------------------------------------------------------
 # 4. SIDEBAR AND FILTERS
 # -----------------------------------------------------------------------------
-st.sidebar.image("logo.png", use_container_width=True) # <-- THIS IS THE FIX
+st.sidebar.image("logo.png", use_container_width=True)
 st.sidebar.header("Dashboard Filters")
 
-channel_options = ["All"] + df["Channel"].unique().tolist()
+channel_options = ["All"] + sorted(df["Channel"].unique().tolist())
 channel = st.sidebar.selectbox("Select Channel", options=channel_options)
 
+# --- NEW: Logic for Searchable Campaign Filter ---
+
+# First, get the base list of campaigns depending on the channel
 if channel == "All":
-    campaign_options = ["All"] + df["Campaign"].unique().tolist()
+    base_campaign_list = sorted(df["Campaign"].unique().tolist())
 else:
-    campaign_options = ["All"] + df[df["Channel"] == channel]["Campaign"].unique().tolist()
-    
+    base_campaign_list = sorted(df[df["Channel"] == channel]["Campaign"].unique().tolist())
+
+# Add a text input for the search term
+campaign_search = st.sidebar.text_input("Search Campaign Name")
+
+# Filter the list based on the search term
+if campaign_search:
+    # Use list comprehension to find campaigns that contain the search term (case-insensitive)
+    filtered_campaigns = [c for c in base_campaign_list if campaign_search.lower() in c.lower()]
+    campaign_options = ["All"] + filtered_campaigns
+else:
+    campaign_options = ["All"] + base_campaign_list
+
+# Display the dropdown with the (potentially filtered) list of campaigns
 campaign = st.sidebar.selectbox("Select Campaign", options=campaign_options)
+# --- End of new search logic ---
+
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Main Period")
