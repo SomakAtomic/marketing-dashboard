@@ -22,7 +22,7 @@ st.title("🐾 BFP Marketing Performance Dashboard")
 @st.cache_data(ttl=3600) # Refresh data every hour
 def get_combined_data():
     try:
-        df_excel = pd.read_csv("raw_data.csv")
+        df_excel = pd.read_csv("raw_data.csv", encoding='utf-8-sig')
     except FileNotFoundError:
         st.error("Error: The historical data file 'raw_data.csv' was not found.")
         df_excel = pd.DataFrame()
