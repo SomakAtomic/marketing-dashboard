@@ -75,30 +75,35 @@ df = get_combined_data()
 st.sidebar.image("logo.png", use_container_width=True) 
 st.sidebar.header("Dashboard Filters")
 
-# --- UPDATED: Set "Google" as the default for the Channel filter ---
-channel_options = ["All"] + sorted(df["channel"].unique().tolist())
+# --- UPDATED: Clean filter columns before use to prevent TypeErrors ---
+
+# Channel Filter
+channel_list = df["channel"].astype(str).fillna("Unknown").unique()
+channel_options = ["All"] + sorted(channel_list)
 try:
-    # Find the index of "Google" to set it as the default
     google_index = channel_options.index("Google")
 except ValueError:
-    google_index = 0 # Default to "All" if "Google" isn't in the list
+    google_index = 0 
 channel = st.sidebar.selectbox("Select Channel", options=channel_options, index=google_index)
 
-
+# Campaign Filter
 if channel == "All":
-    campaign_options = sorted(df["campaign"].unique().tolist())
+    campaign_list = df["campaign"].astype(str).fillna("Unknown").unique()
 else:
-    campaign_options = sorted(df[df["channel"] == channel]["campaign"].unique().tolist())
-    
-selected_campaigns = st.sidebar.multiselect("Select Campaign(s)", options=campaign_options)
+    campaign_list = df[df["channel"] == channel]["campaign"].astype(str).fillna("Unknown").unique()
+selected_campaigns = st.sidebar.multiselect("Select Campaign(s)", options=sorted(campaign_list))
 
-# --- NEW: Add filters for Account and Offer Type ---
-account_options = ["All"] + sorted(df["account"].unique().tolist())
+# Account Filter
+account_list = df["account"].astype(str).fillna("Unknown").unique()
+account_options = ["All"] + sorted(account_list)
 account = st.sidebar.selectbox("Select Account", options=account_options)
 
-offer_type_options = ["All"] + sorted(df["offer type"].unique().tolist())
+# Offer Type Filter
+offer_type_list = df["offer type"].astype(str).fillna("Unknown").unique()
+offer_type_options = ["All"] + sorted(offer_type_list)
 offer_type = st.sidebar.selectbox("Select Offer Type", options=offer_type_options)
 
+# --- End of update ---
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Main Period")
@@ -127,7 +132,6 @@ def calculate_summary_kpis(grouped_df):
     summary['cvr'] = summary['channel leads'] / summary['clicks'] if summary['clicks'].sum() > 0 else 0
     return summary
 
-# --- UPDATED: Add new filters to the main data mask ---
 base_mask = df['date'].notna() 
 if channel != "All":
     base_mask = base_mask & (df["channel"] == channel)
@@ -137,7 +141,6 @@ if account != "All":
     base_mask = base_mask & (df["account"] == account)
 if offer_type != "All":
     base_mask = base_mask & (df["offer type"] == offer_type)
-
 
 df_main = pd.DataFrame() 
 if len(date_range) == 2:
@@ -189,32 +192,9 @@ else:
 
 st.markdown("---")
 
-# --- SECTION 2: PERFORMANCE AT-A-GLANCE (WITH COLORS) ---
+# --- SECTION 2: PERFORMANCE AT-A-GLANCE ---
 st.header("Performance At-a-Glance")
-st.markdown("""
-<style>
-.kpi-box {
-    background-color: #f8f9fa;
-    border: 1px solid #000;
-    border-radius: 5px;
-    padding: 20px;
-    text-align: center;
-    color: #000;
-    margin-bottom: 10px;
-    height: 120px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-}
-.kpi-box h3 { margin: 0 0 5px 0; font-size: 1.2em; font-weight: bold; }
-.kpi-box p { margin: 0; font-size: 1.8em; font-weight: bold; }
-.yellow-box { background-color: #FFF3C4; }
-.purple-box { background-color: #E6E0F8; }
-.green-box  { background-color: #D5F5E3; }
-.blue-box   { background-color: #D6EAF8; }
-</style>
-""", unsafe_allow_html=True)
-
+st.markdown("""<style> .kpi-box { background-color: #f8f9fa; border: 1px solid #000; border-radius: 5px; padding: 20px; text-align: center; color: #000; margin-bottom: 10px; height: 120px; display: flex; flex-direction: column; justify-content: center; } .kpi-box h3 { margin: 0 0 5px 0; font-size: 1.2em; font-weight: bold; } .kpi-box p { margin: 0; font-size: 1.8em; font-weight: bold; } .yellow-box { background-color: #FFF3C4; } .purple-box { background-color: #E6E0F8; } .green-box  { background-color: #D5F5E3; } .blue-box   { background-color: #D6EAF8; } </style>""", unsafe_allow_html=True)
 periods = { "WTD": kpis_wtd, "MTD": kpis_mtd, "YTD": kpis_ytd }
 for period_name, kpi_data in periods.items():
     col1, col2, col3, col4 = st.columns(4)
@@ -236,6 +216,7 @@ if not df_main.empty:
     summary_main = summary_main[summary_main.index.isin(regions_to_display)]
     if summary_compare is not None:
         summary_compare = summary_compare[summary_compare.index.isin(regions_to_display)]
+
     def get_change_color(value, metric_name):
         increase_is_good = ['impressions', 'clicks', 'cost', 'ga-booking', 'ctr', 'cvr']
         decrease_is_good = ['cpc', 'cpb']
@@ -243,6 +224,7 @@ if not df_main.empty:
         if metric_name in increase_is_good: return "color: #00A36C;" if value > 0 else "color: #D32F2F;"
         elif metric_name in decrease_is_good: return "color: #00A36C;" if value < 0 else "color: #D32F2F;"
         return "color: grey;" 
+
     def generate_html_table(main_data, compare_data=None):
         metrics = ['impressions', 'clicks', 'cost', 'ga-booking', 'ctr', 'cpc', 'cpb', 'cvr']
         html = """<style> .styled-table { border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; } .styled-table th, .styled-table td { border: 1px solid #ddd; padding: 8px; } .styled-table th { padding-top: 12px; padding-bottom: 12px; text-align: center; background-color: #008080; color: white; font-weight: bold; } .styled-table td { text-align: center; } .state-name { text-align: left; font-weight: bold; } .metric-values { font-size: 1em; } .percent-change { font-size: 0.9em; font-weight: bold; } </style><table class="styled-table"> <tr><th>State</th>"""
@@ -270,6 +252,7 @@ if not df_main.empty:
             html += "</tr>"
         html += "</table>"
         return html
+        
     if compare_enabled and summary_compare is not None:
         html_table = generate_html_table(summary_main, summary_compare)
     else:
