@@ -16,10 +16,6 @@ st.set_page_config(
 )
 st.title("🐾 BFP Marketing Performance Dashboard")
 
-# --- NEW: Initialize Session State for the drill-down ---
-if 'selected_country' not in st.session_state:
-    st.session_state.selected_country = None
-
 # -----------------------------------------------------------------------------
 # 3. DATA LOADING AND CLEANING
 # -----------------------------------------------------------------------------
@@ -79,7 +75,8 @@ df = get_combined_data()
 st.sidebar.image("logo.png", use_container_width=True) 
 st.sidebar.header("Dashboard Filters")
 
-channel_options = ["All"] + sorted(df["channel"].unique().tolist())
+channel_list = df["channel"].astype(str).fillna("Unknown").unique()
+channel_options = ["All"] + sorted(channel_list)
 try:
     google_index = channel_options.index("Google")
 except ValueError:
@@ -87,11 +84,10 @@ except ValueError:
 channel = st.sidebar.selectbox("Select Channel", options=channel_options, index=google_index)
 
 if channel == "All":
-    campaign_options = sorted(df["campaign"].unique().tolist())
+    campaign_list = df["campaign"].astype(str).fillna("Unknown").unique()
 else:
-    campaign_options = sorted(df[df["channel"] == channel]["campaign"].unique().tolist())
-    
-selected_campaigns = st.sidebar.multiselect("Select Campaign(s)", options=campaign_options)
+    campaign_list = df[df["channel"] == channel]["campaign"].astype(str).fillna("Unknown").unique()
+selected_campaigns = st.sidebar.multiselect("Select Campaign(s)", options=sorted(campaign_list))
 
 account_list = df["account"].astype(str).fillna("Unknown").unique()
 account_options = ["All"] + sorted(account_list)
@@ -201,102 +197,96 @@ for period_name, kpi_data in periods.items():
 
 st.markdown("---")
 
-# --- SECTION 3: COUNTRY/STATE PERFORMANCE (WITH DRILL-DOWN) ---
+# --- SECTION 3: COUNTRY/STATE PERFORMANCE (WITH EXPANDABLE DRILL-DOWN) ---
 st.header("Country & State Performance")
 
-# --- NEW: Function to handle button clicks ---
-def select_country(country):
-    st.session_state.selected_country = country
+def get_change_color(value, metric_name):
+    increase_is_good = ['impressions', 'clicks', 'cost', 'ga-booking', 'ctr', 'cvr']
+    decrease_is_good = ['cpc', 'cpb']
+    if value == 0: return "color: grey;"
+    if metric_name in increase_is_good: return "color: #00A36C;" if value > 0 else "color: #D32F2F;"
+    elif metric_name in decrease_is_good: return "color: #00A36C;" if value < 0 else "color: #D32F2F;"
+    return "color: grey;" 
 
-def back_to_countries():
-    st.session_state.selected_country = None
-
-# --- NEW: Main drill-down logic ---
-if st.session_state.selected_country is None:
-    # --- COUNTRY VIEW (DEFAULT) ---
-    st.subheader("Performance by Country")
-    
-    # Group by country and calculate KPIs
-    country_summary = df_main.groupby("country")[['impressions', 'clicks', 'cost', 'channel leads', 'ga-booking']].apply(calculate_summary_kpis)
-    
-    if country_summary.empty:
-        st.warning("No data to display for the selected filters.")
-    else:
-        # Display each country with a "View States" button
-        for country, row in country_summary.iterrows():
-            cols = st.columns([3, 1])
-            with cols[0]:
-                st.markdown(f"**{country}**")
-            with cols[1]:
-                st.button("View States", key=f"view_{country}", on_click=select_country, args=(country,))
-            st.markdown("---")
-else:
-    # --- STATE VIEW (AFTER A COUNTRY IS SELECTED) ---
-    selected_country = st.session_state.selected_country
-    st.subheader(f"Performance for {selected_country}")
-
-    if st.button("← Back to Countries", on_click=back_to_countries):
-        pass # The on_click callback handles the logic
-
-    # Filter data for the selected country
-    df_country = df_main[df_main['country'] == selected_country]
-    
-    # Group by region (state) for the selected country
-    summary_main = df_country.groupby("region")[['impressions', 'clicks', 'cost', 'channel leads', 'ga-booking']].apply(calculate_summary_kpis)
-    
-    summary_compare = None
-    if compare_enabled and not df_compare.empty:
-        df_compare_country = df_compare[df_compare['country'] == selected_country]
-        if not df_compare_country.empty:
-            summary_compare = df_compare_country.groupby("region")[['impressions', 'clicks', 'cost', 'channel leads', 'ga-booking']].apply(calculate_summary_kpis)
-
-    regions_to_display = ['New South Wales', 'Victoria', 'Western Australia', 'Queensland', 'Tasmania', 'South Australia', 'Australian Capital Territory', 'Auckland', 'Wellington', "Hawke's Bay", 'Tasman', 'Waikato', 'Manawatu-Whanganui', 'Otago', 'Nelson', 'Bay of Plenty', 'Canterbury']
-    summary_main = summary_main[summary_main.index.isin(regions_to_display)]
-    if summary_compare is not None:
-        summary_compare = summary_compare[summary_compare.index.isin(regions_to_display)]
-
-    def get_change_color(value, metric_name):
-        increase_is_good = ['impressions', 'clicks', 'cost', 'ga-booking', 'ctr', 'cvr']
-        decrease_is_good = ['cpc', 'cpb']
-        if value == 0: return "color: grey;"
-        if metric_name in increase_is_good: return "color: #00A36C;" if value > 0 else "color: #D32F2F;"
-        elif metric_name in decrease_is_good: return "color: #00A36C;" if value < 0 else "color: #D32F2F;"
-        return "color: grey;" 
-
-    def generate_html_table(main_data, compare_data=None):
-        metrics = ['impressions', 'clicks', 'cost', 'ga-booking', 'ctr', 'cpc', 'cpb', 'cvr']
-        html = """<style>...</style><table class="styled-table">...</table>""" 
-        html = """<style> .styled-table { border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; } .styled-table th, .styled-table td { border: 1px solid #ddd; padding: 8px; } .styled-table th { padding-top: 12px; padding-bottom: 12px; text-align: center; background-color: #008080; color: white; font-weight: bold; } .styled-table td { text-align: center; } .state-name { text-align: left; font-weight: bold; } .metric-values { font-size: 1em; } .percent-change { font-size: 0.9em; font-weight: bold; } </style><table class="styled-table"> <tr><th>State</th>"""
-        for metric in metrics: html += f"<th>{metric.replace('_', ' ').title()}</th>"
+def generate_html_table(main_data, compare_data=None):
+    metrics = ['impressions', 'clicks', 'cost', 'ga-booking', 'ctr', 'cpc', 'cpb', 'cvr']
+    html = """<style> .styled-table { border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; } .styled-table th, .styled-table td { border: 1px solid #ddd; padding: 8px; } .styled-table th { padding-top: 12px; padding-bottom: 12px; text-align: center; background-color: #008080; color: white; font-weight: bold; } .styled-table td { text-align: center; } .state-name { text-align: left; font-weight: bold; } .metric-values { font-size: 1em; } .percent-change { font-size: 0.9em; font-weight: bold; } </style><table class="styled-table"> <tr><th>State / Region</th>"""
+    for metric in metrics: html += f"<th>{metric.replace('_', ' ').title()}</th>"
+    html += "</tr>"
+    for region, main_row in main_data.iterrows():
+        html += f"<tr><td class='state-name'>{region}</td>"
+        for metric in metrics:
+            main_val = main_row.get(metric, 0)
+            if metric in ['ctr', 'cvr']: main_val_str = f"{main_val:.2%}"
+            elif metric in ['cpc', 'cpb', 'cost']: main_val_str = f"${main_val:,.2f}"
+            else: main_val_str = f"{main_val:,.0f}"
+            if compare_data is not None and region in compare_data.index:
+                compare_row = compare_data.loc[region]
+                compare_val = compare_row.get(metric, 0)
+                if metric in ['ctr', 'cvr']: compare_val_str = f"{compare_val:.2%}"
+                elif metric in ['cpc', 'cpb', 'cost']: compare_val_str = f"${compare_val:,.2f}"
+                else: compare_val_str = f"{compare_val:,.0f}"
+                if compare_val > 0: percent_change = (main_val - compare_val) / compare_val
+                else: percent_change = 0 if main_val == 0 else 1.0
+                color = get_change_color(percent_change, metric)
+                html += f"<td><div class='metric-values'>{main_val_str} | {compare_val_str}</div><div class='percent-change' style='{color}'>{percent_change:.0%}</div></td>"
+            else:
+                html += f"<td><div class='metric-values'>{main_val_str}</div></td>"
         html += "</tr>"
-        for region, main_row in main_data.iterrows():
-            html += f"<tr><td class='state-name'>{region}</td>"
-            for metric in metrics:
-                main_val = main_row.get(metric, 0)
-                if metric in ['ctr', 'cvr']: main_val_str = f"{main_val:.2%}"
-                elif metric in ['cpc', 'cpb', 'cost']: main_val_str = f"${main_val:,.2f}"
-                else: main_val_str = f"{main_val:,.0f}"
-                if compare_data is not None and region in compare_data.index:
-                    compare_row = compare_data.loc[region]
-                    compare_val = compare_row.get(metric, 0)
-                    if metric in ['ctr', 'cvr']: compare_val_str = f"{compare_val:.2%}"
-                    elif metric in ['cpc', 'cpb', 'cost']: compare_val_str = f"${compare_val:,.2f}"
-                    else: compare_val_str = f"{compare_val:,.0f}"
-                    if compare_val > 0: percent_change = (main_val - compare_val) / compare_val
-                    else: percent_change = 0 if main_val == 0 else 1.0
-                    color = get_change_color(percent_change, metric)
-                    html += f"<td><div class='metric-values'>{main_val_str} | {compare_val_str}</div><div class='percent-change' style='{color}'>{percent_change:.0%}</div></td>"
-                else:
-                    html += f"<td><div class='metric-values'>{main_val_str}</div></td>"
-            html += "</tr>"
-        html += "</table>"
-        return html
+    html += "</table>"
+    return html
+
+if not df_main.empty:
+    # First, group by Country
+    country_summary_main = df_main.groupby("country")[['impressions', 'clicks', 'cost', 'channel leads', 'ga-booking']].apply(calculate_summary_kpis)
+    
+    country_summary_compare = None
+    if compare_enabled and not df_compare.empty:
+        country_summary_compare = df_compare.groupby("country")[['impressions', 'clicks', 'cost', 'channel leads', 'ga-booking']].apply(calculate_summary_kpis)
+
+    # Display each country, and an expander for its states
+    for country, country_row in country_summary_main.iterrows():
+        st.markdown(f"### {country}")
         
-    if not summary_main.empty:
-        if compare_enabled and summary_compare is not None:
-            html_table = generate_html_table(summary_main, summary_compare)
-        else:
-            html_table = generate_html_table(summary_main)
-        st.markdown(html_table, unsafe_allow_html=True)
-    else:
-        st.info(f"No state data to display for {selected_country} in the selected period.")
+        # Display the country's total KPIs
+        country_kpis_main = calculate_kpis(df_main[df_main['country'] == country])
+        
+        country_kpis_compare = {"cost": 0, "booking": 0, "cpb": 0}
+        if compare_enabled and not df_compare.empty:
+            country_kpis_compare = calculate_kpis(df_compare[df_compare['country'] == country])
+
+        delta_cost = country_kpis_main["cost"] - country_kpis_compare["cost"]
+        delta_booking = country_kpis_main["booking"] - country_kpis_compare["booking"]
+        delta_cpb = country_kpis_main["cpb"] - country_kpis_compare["cpb"]
+        
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Total Cost", f"${country_kpis_main['cost']:,.2f}", f"${delta_cost:,.2f}" if compare_enabled else None)
+        c2.metric("Total Bookings", f"{country_kpis_main['booking']:,}", f"{delta_booking:,}" if compare_enabled else None)
+        c3.metric("Total CPB", f"${country_kpis_main['cpb']:,.2f}", f"${delta_cpb:,.2f}" if compare_enabled else None, delta_color="inverse")
+        
+        with st.expander(f"View State/Region Breakdown for {country}"):
+            df_states = df_main[df_main['country'] == country]
+            summary_main = df_states.groupby("region")[['impressions', 'clicks', 'cost', 'channel leads', 'ga-booking']].apply(calculate_summary_kpis)
+
+            summary_compare = None
+            if compare_enabled and not df_compare.empty:
+                df_compare_states = df_compare[df_compare['country'] == country]
+                if not df_compare_states.empty:
+                    summary_compare = df_compare_states.groupby("region")[['impressions', 'clicks', 'cost', 'channel leads', 'ga-booking']].apply(calculate_summary_kpis)
+
+            regions_to_display = ['New South Wales', 'Victoria', 'Western Australia', 'Queensland', 'Tasmania', 'South Australia', 'Australian Capital Territory', 'Auckland', 'Wellington', "Hawke's Bay", 'Tasman', 'Waikato', 'Manawatu-Whanganui', 'Otago', 'Nelson', 'Bay of Plenty', 'Canterbury']
+            summary_main = summary_main[summary_main.index.isin(regions_to_display)]
+            if summary_compare is not None:
+                summary_compare = summary_compare[summary_compare.index.isin(regions_to_display)]
+            
+            if not summary_main.empty:
+                if compare_enabled and summary_compare is not None:
+                    html_table = generate_html_table(summary_main, summary_compare)
+                else:
+                    html_table = generate_html_table(summary_main)
+                st.markdown(html_table, unsafe_allow_html=True)
+            else:
+                st.info("No state data to display for this country in the selected period.")
+        st.markdown("---") # Separator between countries
+else:
+     st.warning("No data found for the selected 'Main Period' and filters to display Country/State Performance.")
