@@ -16,6 +16,10 @@ st.set_page_config(
 )
 st.title("🐾 BFP Marketing Performance Dashboard")
 
+# --- NEW: Initialize Session State for the drill-down ---
+if 'selected_country' not in st.session_state:
+    st.session_state.selected_country = None
+
 # -----------------------------------------------------------------------------
 # 3. DATA LOADING AND CLEANING
 # -----------------------------------------------------------------------------
@@ -75,35 +79,27 @@ df = get_combined_data()
 st.sidebar.image("logo.png", use_container_width=True) 
 st.sidebar.header("Dashboard Filters")
 
-# --- UPDATED: Clean filter columns before use to prevent TypeErrors ---
-
-# Channel Filter
-channel_list = df["channel"].astype(str).fillna("Unknown").unique()
-channel_options = ["All"] + sorted(channel_list)
+channel_options = ["All"] + sorted(df["channel"].unique().tolist())
 try:
     google_index = channel_options.index("Google")
 except ValueError:
     google_index = 0 
 channel = st.sidebar.selectbox("Select Channel", options=channel_options, index=google_index)
 
-# Campaign Filter
 if channel == "All":
-    campaign_list = df["campaign"].astype(str).fillna("Unknown").unique()
+    campaign_options = sorted(df["campaign"].unique().tolist())
 else:
-    campaign_list = df[df["channel"] == channel]["campaign"].astype(str).fillna("Unknown").unique()
-selected_campaigns = st.sidebar.multiselect("Select Campaign(s)", options=sorted(campaign_list))
+    campaign_options = sorted(df[df["channel"] == channel]["campaign"].unique().tolist())
+    
+selected_campaigns = st.sidebar.multiselect("Select Campaign(s)", options=campaign_options)
 
-# Account Filter
 account_list = df["account"].astype(str).fillna("Unknown").unique()
 account_options = ["All"] + sorted(account_list)
 account = st.sidebar.selectbox("Select Account", options=account_options)
 
-# Offer Type Filter
 offer_type_list = df["offer type"].astype(str).fillna("Unknown").unique()
 offer_type_options = ["All"] + sorted(offer_type_list)
 offer_type = st.sidebar.selectbox("Select Offer Type", options=offer_type_options)
-
-# --- End of update ---
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Main Period")
@@ -205,13 +201,55 @@ for period_name, kpi_data in periods.items():
 
 st.markdown("---")
 
-# --- SECTION 3: STATE PERFORMANCE ---
-st.header("State Performance")
-if not df_main.empty:
-    summary_main = df_main.groupby("region")[['impressions', 'clicks', 'cost', 'channel leads', 'ga-booking']].apply(calculate_summary_kpis)
+# --- SECTION 3: COUNTRY/STATE PERFORMANCE (WITH DRILL-DOWN) ---
+st.header("Country & State Performance")
+
+# --- NEW: Function to handle button clicks ---
+def select_country(country):
+    st.session_state.selected_country = country
+
+def back_to_countries():
+    st.session_state.selected_country = None
+
+# --- NEW: Main drill-down logic ---
+if st.session_state.selected_country is None:
+    # --- COUNTRY VIEW (DEFAULT) ---
+    st.subheader("Performance by Country")
+    
+    # Group by country and calculate KPIs
+    country_summary = df_main.groupby("country")[['impressions', 'clicks', 'cost', 'channel leads', 'ga-booking']].apply(calculate_summary_kpis)
+    
+    if country_summary.empty:
+        st.warning("No data to display for the selected filters.")
+    else:
+        # Display each country with a "View States" button
+        for country, row in country_summary.iterrows():
+            cols = st.columns([3, 1])
+            with cols[0]:
+                st.markdown(f"**{country}**")
+            with cols[1]:
+                st.button("View States", key=f"view_{country}", on_click=select_country, args=(country,))
+            st.markdown("---")
+else:
+    # --- STATE VIEW (AFTER A COUNTRY IS SELECTED) ---
+    selected_country = st.session_state.selected_country
+    st.subheader(f"Performance for {selected_country}")
+
+    if st.button("← Back to Countries", on_click=back_to_countries):
+        pass # The on_click callback handles the logic
+
+    # Filter data for the selected country
+    df_country = df_main[df_main['country'] == selected_country]
+    
+    # Group by region (state) for the selected country
+    summary_main = df_country.groupby("region")[['impressions', 'clicks', 'cost', 'channel leads', 'ga-booking']].apply(calculate_summary_kpis)
+    
     summary_compare = None
     if compare_enabled and not df_compare.empty:
-        summary_compare = df_compare.groupby("region")[['impressions', 'clicks', 'cost', 'channel leads', 'ga-booking']].apply(calculate_summary_kpis)
+        df_compare_country = df_compare[df_compare['country'] == selected_country]
+        if not df_compare_country.empty:
+            summary_compare = df_compare_country.groupby("region")[['impressions', 'clicks', 'cost', 'channel leads', 'ga-booking']].apply(calculate_summary_kpis)
+
     regions_to_display = ['New South Wales', 'Victoria', 'Western Australia', 'Queensland', 'Tasmania', 'South Australia', 'Australian Capital Territory', 'Auckland', 'Wellington', "Hawke's Bay", 'Tasman', 'Waikato', 'Manawatu-Whanganui', 'Otago', 'Nelson', 'Bay of Plenty', 'Canterbury']
     summary_main = summary_main[summary_main.index.isin(regions_to_display)]
     if summary_compare is not None:
@@ -227,6 +265,7 @@ if not df_main.empty:
 
     def generate_html_table(main_data, compare_data=None):
         metrics = ['impressions', 'clicks', 'cost', 'ga-booking', 'ctr', 'cpc', 'cpb', 'cvr']
+        html = """<style>...</style><table class="styled-table">...</table>""" 
         html = """<style> .styled-table { border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; } .styled-table th, .styled-table td { border: 1px solid #ddd; padding: 8px; } .styled-table th { padding-top: 12px; padding-bottom: 12px; text-align: center; background-color: #008080; color: white; font-weight: bold; } .styled-table td { text-align: center; } .state-name { text-align: left; font-weight: bold; } .metric-values { font-size: 1em; } .percent-change { font-size: 0.9em; font-weight: bold; } </style><table class="styled-table"> <tr><th>State</th>"""
         for metric in metrics: html += f"<th>{metric.replace('_', ' ').title()}</th>"
         html += "</tr>"
@@ -253,10 +292,11 @@ if not df_main.empty:
         html += "</table>"
         return html
         
-    if compare_enabled and summary_compare is not None:
-        html_table = generate_html_table(summary_main, summary_compare)
+    if not summary_main.empty:
+        if compare_enabled and summary_compare is not None:
+            html_table = generate_html_table(summary_main, summary_compare)
+        else:
+            html_table = generate_html_table(summary_main)
+        st.markdown(html_table, unsafe_allow_html=True)
     else:
-        html_table = generate_html_table(summary_main)
-    st.markdown(html_table, unsafe_allow_html=True)
-else:
-     st.warning("No data found for the selected 'Main Period' and filters to display State Performance.")
+        st.info(f"No state data to display for {selected_country} in the selected period.")
